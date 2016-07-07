@@ -5,7 +5,6 @@ var _url = require('url');
 var _fs = require('fs');
 var _os = require('os');
 var _path = require('path');
-var _tsapi = require("typescript.api");
 
 var defaults = {
 	compress:    true,
@@ -17,60 +16,6 @@ var defaults = {
 	verbose:     false,
 	cacheOutput: true
 };
-
-
-_tsapi.reset({languageVersion: "EcmaScript5"});
-
-function compilets(file, code, cb)
-{
-	function fail(units)
-	{
-		var str = '';
-		for (var n in units)
-		{
-
-			for (var m in units[n].diagnostics)
-			{
-				if (str.length)
-				{
-					str += '\n';
-				}
-
-				str += units[n].diagnostics[m].toString();
-			}
-		}
-
-		cb(new Error(str));
-	}
-
-
-	_tsapi.resolve([file], function (resolved)
-	{
-
-		if (!_tsapi.check(resolved))
-		{
-			return fail(resolved);
-		}
-		else
-		{
-			_tsapi.compile(resolved, function (compiled)
-			{
-
-				if (!_tsapi.check(compiled))
-				{
-					return fail(compiled);
-				}
-				else
-				{
-					return cb(null, compiled.map(function (u)
-					{
-						return u.content;
-					}).join('\n'));
-				}
-			});
-		}
-	});
-}
 
 module.exports = function (options)
 {
@@ -108,36 +53,7 @@ module.exports = function (options)
 			return callback(new Error(file + ' does not exist'));
 		}
 
-		var fCache = options.cacheOutput && _path.extname(file) == '.ts';
-
 		var stats = _fs.statSync(file);
-
-		// Only cache typescript for now
-		if (fCache)
-		{
-			var cfile = cacheFilePath(file);
-
-			try
-			{
-				var cs = _fs.statSync(cfile);
-
-				if (cs.mtime.getTime() == stats.mtime.getTime())
-				{
-					// Cache file is good, send it back
-					var str = _fs.readFileSync(cfile, 'utf8');
-
-					if (!options.compress)
-						str = "\n\n// " + file + "\n\n" + str;
-
-					return callback(null, str);
-				}
-
-			}
-			catch(ex)
-			{
-				// No cache item, fall through
-			}
-		}
 
 		var start;
 		if (options.verbose)
@@ -161,14 +77,10 @@ module.exports = function (options)
 
 			function finish(js)
 			{
-				if (fCache)
-					saveCacheFile(js);
 
 				if (options.verbose)
 				{
 					console.log('Compiled %s in %d ms', file, Date.now() - start);
-					if (fCache)
-						console.log('    => %s', cfile);
 
 				}
 			}
@@ -202,26 +114,11 @@ module.exports = function (options)
 				callback(null, ugly);
 			}
 
-			if (_path.extname(file) === '.ts')
-			{
-				compilets(file, code, function (err, str)
-				{
-					if (err)
-					{
-						return callback(err);
-					}
-
-					uglify(str);
-				});
+			if(!!file.match('require-wrapper-start') || !!file.match('require-wrapper-end')){
+				callback(null, code);
 			}
-			else
-			{
-				if(!!file.match('require-wrapper-start') || !!file.match('require-wrapper-end')){
-					callback(null, code);
-				}
-				else{
-					uglify(code);
-				}
+			else{
+				uglify(code);
 			}
 
 		});
